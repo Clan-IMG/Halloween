@@ -1,0 +1,10 @@
+name: Halloween
+prefix: [ Halloween ]
+version: '${version}'
+
+main: net.clanimg.halloween.Halloween
+api-version: '1.21.11'
+load: POSTWORLD
+
+authors: [ WrobelXXL ]
+website: https://clan-img.net
