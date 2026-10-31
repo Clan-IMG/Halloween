@@ -1,0 +1,42 @@
+name: Halloween
+prefix: [ Halloween ]
+version: '${version}'
+
+main: net.clanimg.halloween.Halloween
+api-version: '1.21.11'
+load: POSTWORLD
+
+authors: [ WrobelXXL ]
+website: https://clan-img.net
+
+libraries:
+  - com.zaxxer:HikariCP:${hikari}
+  - org.mariadb.jdbc:mariadb-java-client:${mariadb}
+
+commands:
+  halloween:
+    description: Halloween-Deko einrichten und verteilen
+    aliases: [ helloween ]
+    usage: /halloween <setup|inv|reload|set|add|remove>
+
+permissions:
+  halloween.setup:
+    description: /halloween setup - Deko-Items festlegen
+    default: op
+  halloween.inv:
+    description: /halloween inv - Deko-Items holen, Deko platzieren und (schleichend) abbauen
+    default: op
+  halloween.reload:
+    description: /halloween reload - config.yml neu laden
+    default: op
+  halloween.points:
+    description: /halloween set|add|remove <Spieler|*> <Anzahl> - Punkte von Hand ändern
+    default: op
+  halloween.admin:
+    description: Alle Halloween-Rechte
+    default: op
+    children:
+      halloween.setup: true
+      halloween.inv: true
+      halloween.reload: true
+      halloween.points: true
