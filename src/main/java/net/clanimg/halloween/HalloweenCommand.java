@@ -45,6 +45,16 @@ public final class HalloweenCommand implements TabExecutor {
                     plugin.reloadSettings(sender);
                 }
             }
+            case "list" -> {
+                if (sender instanceof Player player && allowed(player, "halloween.inv")) {
+                    plugin.listDecos(player);
+                }
+            }
+            case "tp" -> {
+                if (sender instanceof Player player && allowed(player, "halloween.inv") && args.length >= 2) {
+                    plugin.teleportToDeco(player, args[1]);
+                }
+            }
             case "set", "add", "remove" -> {
                 if (sender instanceof Player player && !allowed(player, "halloween.points")) {
                     return true;
@@ -54,7 +64,13 @@ public final class HalloweenCommand implements TabExecutor {
                     plugin.send(sender, "points-usage");
                     return true;
                 }
-                plugin.adjustPoints(sender, Adjustment.valueOf(sub.toUpperCase(Locale.ROOT)), args[1], amount);
+                // Punkte gelten pro Welt: angegebene Welt, sonst die, in der man steht.
+                String world = args.length >= 4 ? args[3] : sender instanceof Player player ? player.getWorld().getName() : null;
+                if (world == null) {
+                    plugin.send(sender, "points-usage");
+                    return true;
+                }
+                plugin.adjustPoints(sender, Adjustment.valueOf(sub.toUpperCase(Locale.ROOT)), args[1], amount, world);
             }
             default -> plugin.send(sender, "usage");
         }
@@ -82,7 +98,7 @@ public final class HalloweenCommand implements TabExecutor {
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
             String prefix = args[0].toLowerCase(Locale.ROOT);
-            return List.of("setup", "inv", "reload", "set", "add", "remove").stream()
+            return List.of("setup", "inv", "list", "reload", "set", "add", "remove").stream()
                 .filter(sub -> sub.startsWith(prefix) && sender.hasPermission(permissionFor(sub)))
                 .toList();
         }
@@ -98,12 +114,18 @@ public final class HalloweenCommand implements TabExecutor {
         if (points && args.length == 3) {
             return List.of("1", "5", "10");
         }
+        if (points && args.length == 4) {
+            String prefix = args[3].toLowerCase(Locale.ROOT);
+            return Bukkit.getWorlds().stream().map(org.bukkit.World::getName)
+                .filter(name -> name.toLowerCase(Locale.ROOT).startsWith(prefix)).toList();
+        }
         return List.of();
     }
 
     private static String permissionFor(String sub) {
         return switch (sub) {
             case "set", "add", "remove" -> "halloween.points";
+            case "list" -> "halloween.inv";
             default -> "halloween." + sub;
         };
     }

@@ -44,10 +44,16 @@ public final class DecoParticles {
         stop();
         settings = newSettings;
         if (!settings.enabled()) {
+            startScanOnly();
             return;
         }
         dust = new Particle.DustOptions(Color.fromRGB(settings.rgb()), settings.size());
         task = Bukkit.getScheduler().runTaskTimer(plugin, this::tick, settings.intervalTicks(), settings.intervalTicks());
+    }
+
+    /** Ohne Partikel trotzdem regelmäßig prüfen, welche Deko in welcher Welt steht (Wertung pro Welt). */
+    private void startScanOnly() {
+        task = Bukkit.getScheduler().runTaskTimer(plugin, this::tick, 20L, 20L * 15L);
     }
 
     public void stop() {
@@ -73,6 +79,9 @@ public final class DecoParticles {
         for (Player player : Bukkit.getOnlinePlayers()) {
             World world = player.getWorld();
             List<Spot> spots = spotsByWorld.computeIfAbsent(world.getName(), name -> scan(world));
+            if (!settings.enabled()) {
+                continue;
+            }
             Location position = player.getLocation();
             UUID playerId = player.getUniqueId();
             for (Spot spot : spots) {
@@ -95,6 +104,7 @@ public final class DecoParticles {
             Optional<Deco> here = plugin.decoItems().decoAt(block, registry);
             if (here.isPresent() && here.get().id().equals(deco.id())) {
                 spots.add(new Spot(deco.id(), block.getLocation().add(0.5, 0.35, 0.5)));
+                plugin.discoverDeco(deco, world.getName()); // auch in Kopien der Welt mitzählen
             }
         }
         return spots;

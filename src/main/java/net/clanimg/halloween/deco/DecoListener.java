@@ -15,6 +15,7 @@ import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockExplodeEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityExplodeEvent;
+import org.bukkit.event.player.PlayerChangedWorldEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
@@ -85,6 +86,7 @@ public final class DecoListener implements Listener {
             return;
         }
         Player player = event.getPlayer();
+        plugin.discoverDeco(deco.get(), block.getWorld().getName());
         if (player.hasPermission(MANAGE_PERMISSION) && player.isSneaking()) {
             return; // Verwalten: schleichend abbauen statt finden
         }
@@ -124,6 +126,11 @@ public final class DecoListener implements Listener {
     @EventHandler
     public void onJoin(PlayerJoinEvent event) {
         plugin.playerJoined(event.getPlayer());
+    }
+
+    @EventHandler
+    public void onWorldChange(PlayerChangedWorldEvent event) {
+        plugin.refreshScoreboard(event.getPlayer());
     }
 
     @EventHandler

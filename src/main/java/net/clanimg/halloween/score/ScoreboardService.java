@@ -5,7 +5,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.function.IntSupplier;
 import net.clanimg.halloween.HalloweenSettings.ScoreboardSettings;
 import net.clanimg.halloween.Text;
 import org.bukkit.Bukkit;
@@ -15,23 +14,24 @@ import org.bukkit.scoreboard.DisplaySlot;
 import org.bukkit.scoreboard.Objective;
 import org.bukkit.scoreboard.Scoreboard;
 
-/** Eigene Sidebar je Spieler (die eigene Zeile ist für jeden anders). Nur auf dem Server-Thread benutzen. */
+/**
+ * Eigene Sidebar je Spieler (die eigene Zeile ist für jeden anders) mit der Wertung der Welt, in der er gerade ist.
+ * In Welten ohne Deko wird sie ausgeblendet. Nur auf dem Server-Thread benutzen.
+ */
 public final class ScoreboardService {
     private static final String OBJECTIVE = "halloween";
     private static final int MAX_LINES = 15;
 
     private final Map<UUID, Scoreboard> boards = new ConcurrentHashMap<>();
     private ScoreboardSettings settings;
-    private Leaderboard leaderboard = Leaderboard.EMPTY;
-    private final IntSupplier totalDecos;
+    private ScoreData data = ScoreData.EMPTY;
 
-    public ScoreboardService(ScoreboardSettings settings, IntSupplier totalDecos) {
+    public ScoreboardService(ScoreboardSettings settings) {
         this.settings = settings;
-        this.totalDecos = totalDecos;
     }
 
-    public Leaderboard leaderboard() {
-        return leaderboard;
+    public ScoreData data() {
+        return data;
     }
 
     public void applySettings(ScoreboardSettings newSettings) {
@@ -42,9 +42,9 @@ public final class ScoreboardService {
         }
     }
 
-    /** Neue Rangliste für alle anzeigen. */
-    public void update(Leaderboard newLeaderboard) {
-        leaderboard = newLeaderboard;
+    /** Neuen Stand für alle anzeigen. */
+    public void update(ScoreData newData) {
+        data = newData;
         for (Player player : Bukkit.getOnlinePlayers()) {
             render(player);
         }
@@ -54,8 +54,7 @@ public final class ScoreboardService {
         if (!settings.enabled()) {
             return;
         }
-        Scoreboard board = boards.computeIfAbsent(player.getUniqueId(), id -> createBoard());
-        player.setScoreboard(board);
+        boards.computeIfAbsent(player.getUniqueId(), id -> createBoard());
         render(player);
     }
 
@@ -81,16 +80,29 @@ public final class ScoreboardService {
         return board;
     }
 
-    private void render(Player player) {
+    /** Neu zeichnen, z.B. nach einem Weltwechsel. */
+    public void render(Player player) {
         Scoreboard board = boards.get(player.getUniqueId());
         if (board == null) {
             return;
+        }
+        String world = player.getWorld().getName();
+        int total = data.total(world);
+        if (total == 0) {
+            // Keine Deko in dieser Welt: Sidebar ausblenden (andere Scoreboards bleiben unberührt).
+            if (player.getScoreboard() == board) {
+                player.setScoreboard(Bukkit.getScoreboardManager().getMainScoreboard());
+            }
+            return;
+        }
+        if (player.getScoreboard() != board) {
+            player.setScoreboard(board);
         }
         Objective objective = board.getObjective(OBJECTIVE);
         if (objective == null) {
             return;
         }
-        List<String> lines = SidebarLines.build(leaderboard, player.getUniqueId(), player.getName(), totalDecos.getAsInt(), settings);
+        List<String> lines = SidebarLines.build(data.leaderboard(world), player.getUniqueId(), player.getName(), total, settings);
         int count = Math.min(lines.size(), MAX_LINES);
         for (int i = 0; i < count; i++) {
             // Feste, unsichtbare Einträge; angezeigt wird der eigene Text. Höherer Wert = weiter oben.

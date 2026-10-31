@@ -25,8 +25,8 @@ database:
 scoreboard:
   enabled: true
   # MiniMessage oder &-Farbcodes
-  title: "<b><gradient:#8000FF:#FF00AA>Helloween</gradient></b>"
-  subtitle: "&7Such die Helloween Deko."
+  title: "<b><gradient:#8000FF:#FF00AA>Halloween</gradient></b>"
+  subtitle: "&7Such die Halloween Deko."
   # So viele Plätze werden angezeigt; wer darunter liegt, sieht sich zusätzlich darunter.
   top: 5
   # %rank% Platz, %name% Spieler, %score% Punkte, %total% Anzahl Deko
@@ -79,8 +79,15 @@ messages:
   database-offline: "&cKeine Verbindung zur Datenbank: &7%error% &8- &7config.yml prüfen, dann &b/halloween reload&7."
   connecting: "&7Verbinde mit der Datenbank ..."
   connected: "&7Mit der Datenbank verbunden - Halloween ist aktiv."
-  usage: "&7/halloween setup &8- &7Deko-Items festlegen  &7/halloween inv &8- &7Deko-Items holen  &7/halloween set|add|remove &8- &7Punkte ändern"
-  points-usage: "&7/halloween <set|add|remove> <Spieler|*> <Anzahl>"
-  points-set: "&b%player% &7hat jetzt &b%score% &7Punkte. &8(bei 0 kann alle Deko neu gesucht werden)"
-  points-all: "&7Punkte von &b%count% &7Spielern geändert."
+  usage: "&7/halloween setup &8- &7Deko-Items festlegen  &7/halloween inv &8- &7Deko-Items holen  &7/halloween list &8- &7Deko anzeigen  &7/halloween set|add|remove &8- &7Punkte ändern"
+  list-header: "&7Deko in &b%world%&7: &b%total% &8(Klick = Teleport)"
+  list-entry: "&8%nr%. &7%type% &8(&f%x% %y% %z%&8) %found%"
+  list-found: "&a✔"
+  list-open: "&7✘"
+  list-hover: "&7Klick zum Teleportieren"
+  list-empty: "&7In &b%world% &7gibt es keine Deko."
+  list-unknown: "&7Diese Deko gibt es nicht mehr."
+  points-usage: "&7/halloween <set|add|remove> <Spieler|*> <Anzahl> [Welt] &8(ohne Welt: die, in der du stehst)"
+  points-set: "&b%player% &7hat in &b%world% &7jetzt &b%score% &7Punkte. &8(bei 0 kann dort alle Deko neu gesucht werden)"
+  points-all: "&7Punkte von &b%count% &7Spielern in &b%world% &7geändert."
   player-unknown: "&7Spieler &b%player% &7ist unbekannt (noch nie online gewesen, seit das Event läuft)."

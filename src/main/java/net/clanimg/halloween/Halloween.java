@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.UUID;
@@ -16,7 +17,7 @@ import net.clanimg.halloween.deco.DecoItems;
 import net.clanimg.halloween.deco.DecoListener;
 import net.clanimg.halloween.deco.DecoRegistry;
 import net.clanimg.halloween.menu.MenuListener;
-import net.clanimg.halloween.score.Leaderboard;
+import net.clanimg.halloween.score.ScoreData;
 import net.clanimg.halloween.score.ScoreboardService;
 import net.clanimg.halloween.storage.HalloweenRepository;
 import net.clanimg.halloween.storage.HalloweenRepository.Adjustment;
@@ -49,7 +50,7 @@ public final class Halloween extends JavaPlugin {
         saveDefaultConfig();
         settings = HalloweenSettings.from(getConfig());
         decoItems = new DecoItems(this);
-        scoreboards = new ScoreboardService(settings.scoreboard(), registry::total);
+        scoreboards = new ScoreboardService(settings.scoreboard());
         // Unabhängig von der Datenbank.
         getServer().getPluginManager().registerEvents(new JoinSpawnListener(this), this);
         PluginCommand command = getCommand("halloween");
@@ -183,7 +184,7 @@ public final class Halloween extends JavaPlugin {
     private void refreshNow() {
         try {
             List<Deco> decos = repository.loadDecos();
-            List<Leaderboard.Entry> scores = repository.loadScores();
+            ScoreData data = repository.loadScoreData(decos);
             // Funde der Online-Spieler auch neu laden (z.B. per /halloween set auf einem anderen Server zurückgesetzt).
             Map<UUID, Set<UUID>> found = repository.loadFound(registry.trackedPlayers());
             sync(() -> {
@@ -193,7 +194,7 @@ public final class Halloween extends JavaPlugin {
                         registry.setFound(playerId, decoIds);
                     }
                 });
-                scoreboards.update(Leaderboard.of(scores));
+                scoreboards.update(data);
             });
         } catch (SQLException ex) {
             getLogger().warning("Abgleich mit der Datenbank fehlgeschlagen: " + ex.getMessage());
@@ -213,6 +214,11 @@ public final class Halloween extends JavaPlugin {
         }, ex -> getLogger().warning("Funde von " + name + " nicht geladen: " + ex.getMessage()));
     }
 
+    /** Nach einem Weltwechsel: Wertung der neuen Welt zeigen. */
+    public void refreshScoreboard(Player player) {
+        scoreboards.render(player);
+    }
+
     public void playerLeft(Player player) {
         registry.forget(player.getUniqueId());
         scoreboards.remove(player);
@@ -223,6 +229,7 @@ public final class Halloween extends JavaPlugin {
     public void recordFind(Player player, Deco deco) {
         UUID playerId = player.getUniqueId();
         String name = player.getName();
+        String world = player.getWorld().getName();
         long foundAt = System.currentTimeMillis();
         async(() -> {
             boolean isNew = repository.recordFind(playerId, name, deco.id());
@@ -231,10 +238,11 @@ public final class Halloween extends JavaPlugin {
                     decoListener.alreadyFound(player);
                     return;
                 }
-                send(player, "found", "%found%", Integer.toString(registry.foundCount(playerId)),
-                    "%total%", Integer.toString(registry.total()));
+                ScoreData data = scoreboards.data().withDecoIn(deco.id(), world).withFind(playerId, name, deco.id(), foundAt);
+                scoreboards.update(data);
+                send(player, "found", "%found%", Integer.toString(data.found(playerId, world)),
+                    "%total%", Integer.toString(data.total(world)));
                 playFoundSound(player);
-                scoreboards.update(scoreboards.leaderboard().withFind(playerId, name, foundAt));
             });
         }, ex -> {
             registry.unmarkFound(playerId, deco.id());
@@ -259,8 +267,9 @@ public final class Halloween extends JavaPlugin {
 
     public void addDeco(Player player, Deco deco) {
         registry.add(deco); // sofort anklickbar
-        scoreboards.update(scoreboards.leaderboard()); // neue Gesamtzahl
-        send(player, "deco-placed", "%total%", Integer.toString(registry.total()));
+        ScoreData data = scoreboards.data().withDecoIn(deco.id(), deco.world());
+        scoreboards.update(data); // neue Gesamtzahl dieser Welt
+        send(player, "deco-placed", "%total%", Integer.toString(data.total(deco.world())));
         UUID placedBy = player.getUniqueId();
         async(() -> repository.addDeco(deco, placedBy), ex -> {
             registry.remove(deco.id());
@@ -271,8 +280,9 @@ public final class Halloween extends JavaPlugin {
 
     public void removeDeco(Player player, Deco deco) {
         registry.remove(deco.id());
-        scoreboards.update(scoreboards.leaderboard());
-        send(player, "deco-removed", "%total%", Integer.toString(registry.total()));
+        ScoreData data = scoreboards.data().withoutDeco(deco.id());
+        scoreboards.update(data);
+        send(player, "deco-removed", "%total%", Integer.toString(data.total(player.getWorld().getName())));
         async(() -> {
             repository.removeDeco(deco.id());
             refreshNow(); // Punkte ohne diese Deko
@@ -282,10 +292,79 @@ public final class Halloween extends JavaPlugin {
         });
     }
 
+    /**
+     * Deko steht (auch) in dieser Welt - beim Anklicken oder Sehen in einer kopierten Welt entdeckt. Zählt ab dann in
+     * der Wertung dieser Welt mit.
+     */
+    public void discoverDeco(Deco deco, String world) {
+        if (!isConnected() || scoreboards.data().decosIn(world).contains(deco.id())) {
+            return;
+        }
+        scoreboards.update(scoreboards.data().withDecoIn(deco.id(), world));
+        async(() -> repository.addDecoWorld(deco.id(), world),
+            ex -> getLogger().warning("Deko-Welt nicht gespeichert: " + ex.getMessage()));
+    }
+
+    // ------------------------------------------------------------------ /halloween list | tp
+
+    /** Alle Deko der Welt, in der der Spieler steht, im Chat - ein Klick teleportiert hin. */
+    public void listDecos(Player player) {
+        String world = player.getWorld().getName();
+        List<Deco> decos = new java.util.ArrayList<>();
+        for (UUID id : scoreboards.data().decosIn(world)) {
+            registry.byId(id).ifPresent(decos::add);
+        }
+        if (decos.isEmpty()) {
+            send(player, "list-empty", "%world%", world);
+            return;
+        }
+        decos.sort(java.util.Comparator.comparingInt(Deco::x).thenComparingInt(Deco::z).thenComparingInt(Deco::y));
+        send(player, "list-header", "%world%", world, "%total%", Integer.toString(decos.size()));
+        UUID playerId = player.getUniqueId();
+        for (int i = 0; i < decos.size(); i++) {
+            Deco deco = decos.get(i);
+            String line = settings.messages().getOrDefault("list-entry", "&8%nr%. &7%type% &8(&f%x% %y% %z%&8) %found%")
+                .replace("%nr%", Integer.toString(i + 1))
+                .replace("%type%", deco.material().toLowerCase(java.util.Locale.ROOT).replace('_', ' '))
+                .replace("%x%", Integer.toString(deco.x()))
+                .replace("%y%", Integer.toString(deco.y()))
+                .replace("%z%", Integer.toString(deco.z()))
+                .replace("%found%", registry.hasFound(playerId, deco.id())
+                    ? settings.messages().getOrDefault("list-found", "&a✔") : settings.messages().getOrDefault("list-open", "&7✘"));
+            player.sendMessage(Text.parse(line)
+                .hoverEvent(net.kyori.adventure.text.event.HoverEvent.showText(
+                    Text.parse(settings.messages().getOrDefault("list-hover", "&7Klick zum Teleportieren"))))
+                .clickEvent(net.kyori.adventure.text.event.ClickEvent.runCommand("/halloween tp " + deco.id())));
+        }
+    }
+
+    /** Teleport zu einer Deko - in der Welt, in der man steht (auch in Kopien an denselben Koordinaten). */
+    public void teleportToDeco(Player player, String rawId) {
+        UUID id;
+        try {
+            id = UUID.fromString(rawId);
+        } catch (IllegalArgumentException ex) {
+            send(player, "list-unknown");
+            return;
+        }
+        Optional<Deco> deco = registry.byId(id);
+        if (deco.isEmpty()) {
+            send(player, "list-unknown");
+            return;
+        }
+        org.bukkit.Location target = new org.bukkit.Location(player.getWorld(), deco.get().x() + 0.5, deco.get().y() + 1.0,
+            deco.get().z() + 0.5, player.getLocation().getYaw(), player.getLocation().getPitch());
+        player.teleportAsync(target);
+    }
+
     // ------------------------------------------------------------------ Punkte von Hand (/halloween set|add|remove)
 
-    /** @param target Spielername oder * für alle Spieler, die schon in der Wertung waren, und alle, die online sind */
-    public void adjustPoints(CommandSender sender, Adjustment adjustment, String target, int amount) {
+    /**
+     * @param target Spielername oder * für alle Spieler, die schon in der Wertung waren, und alle, die online sind
+     * @param world  Welt, deren Wertung geändert wird
+     */
+    public void adjustPoints(CommandSender sender, Adjustment adjustment, String target, int amount, String world) {
+        Set<UUID> decosInWorld = scoreboards.data().decosIn(world);
         Map<String, UUID> online = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
         for (Player player : Bukkit.getOnlinePlayers()) {
             online.put(player.getName(), player.getUniqueId());
@@ -312,18 +391,19 @@ public final class Halloween extends JavaPlugin {
             }
             Map<String, Integer> scores = new LinkedHashMap<>();
             for (Map.Entry<String, UUID> player : targets.entrySet()) {
-                scores.put(player.getKey(), repository.adjustScore(player.getValue(), player.getKey(), adjustment, amount));
+                scores.put(player.getKey(), repository.adjustWorldScore(world, decosInWorld, player.getValue(), player.getKey(), adjustment, amount));
             }
-            List<Leaderboard.Entry> leaderboard = repository.loadScores();
+            List<Deco> decos = repository.loadDecos();
+            ScoreData data = repository.loadScoreData(decos);
             Map<UUID, Set<UUID>> found = repository.loadFound(registry.trackedPlayers());
             sync(() -> {
                 found.forEach(registry::setFound);
-                scoreboards.update(Leaderboard.of(leaderboard));
+                scoreboards.update(data);
                 if (scores.size() == 1) {
                     Map.Entry<String, Integer> only = scores.entrySet().iterator().next();
-                    send(sender, "points-set", "%player%", only.getKey(), "%score%", Integer.toString(only.getValue()));
+                    send(sender, "points-set", "%player%", only.getKey(), "%score%", Integer.toString(only.getValue()), "%world%", world);
                 } else {
-                    send(sender, "points-all", "%count%", Integer.toString(scores.size()));
+                    send(sender, "points-all", "%count%", Integer.toString(scores.size()), "%world%", world);
                 }
             });
         }, ex -> {

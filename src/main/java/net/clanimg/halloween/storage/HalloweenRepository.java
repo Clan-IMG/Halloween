@@ -13,6 +13,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
@@ -20,7 +21,7 @@ import java.util.UUID;
 import java.util.logging.Logger;
 import net.clanimg.halloween.HalloweenSettings.DatabaseSettings;
 import net.clanimg.halloween.deco.Deco;
-import net.clanimg.halloween.score.Leaderboard;
+import net.clanimg.halloween.score.ScoreData;
 
 /**
  * MariaDB-Zugriff. Alle Methoden blockieren - nur außerhalb des Server-Threads aufrufen.
@@ -62,12 +63,21 @@ public final class HalloweenRepository implements AutoCloseable {
         )
         """,
         """
-        CREATE TABLE IF NOT EXISTS halloween_adjustments (
+        CREATE TABLE IF NOT EXISTS halloween_deco_worlds (
             event_id VARCHAR(64) NOT NULL,
+            deco_id CHAR(36) NOT NULL,
+            world VARCHAR(64) NOT NULL,
+            PRIMARY KEY (event_id, deco_id, world)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS halloween_world_bonus (
+            event_id VARCHAR(64) NOT NULL,
+            world VARCHAR(64) NOT NULL,
             player_uuid CHAR(36) NOT NULL,
             bonus INT NOT NULL DEFAULT 0,
             updated_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
-            PRIMARY KEY (event_id, player_uuid)
+            PRIMARY KEY (event_id, world, player_uuid)
         )
         """,
         """
@@ -192,6 +202,7 @@ public final class HalloweenRepository implements AutoCloseable {
             statement.setString(9, placedBy == null ? null : placedBy.toString());
             statement.executeUpdate();
         }
+        addDecoWorld(deco.id(), deco.world());
     }
 
     /** Entfernt die Deko und alle Funde davon (sonst könnte man eine woanders neu gesetzte Deko doppelt zählen). */
@@ -199,10 +210,14 @@ public final class HalloweenRepository implements AutoCloseable {
         try (Connection connection = pool.getConnection()) {
             connection.setAutoCommit(false);
             try (PreparedStatement finds = connection.prepareStatement("DELETE FROM halloween_finds WHERE event_id = ? AND deco_id = ?");
+                 PreparedStatement worlds = connection.prepareStatement("DELETE FROM halloween_deco_worlds WHERE event_id = ? AND deco_id = ?");
                  PreparedStatement deco = connection.prepareStatement("DELETE FROM halloween_decos WHERE event_id = ? AND deco_id = ?")) {
                 finds.setString(1, eventId);
                 finds.setString(2, decoId.toString());
                 finds.executeUpdate();
+                worlds.setString(1, eventId);
+                worlds.setString(2, decoId.toString());
+                worlds.executeUpdate();
                 deco.setString(1, eventId);
                 deco.setString(2, decoId.toString());
                 deco.executeUpdate();
@@ -286,35 +301,79 @@ public final class HalloweenRepository implements AutoCloseable {
         }
     }
 
-    /** Punkte aller Spieler: gefundene Deko (die es im Event noch gibt) plus Korrektur per /halloween set|add|remove. */
-    public List<Leaderboard.Entry> loadScores() throws SQLException {
-        List<Leaderboard.Entry> entries = new ArrayList<>();
+    /** Deko steht (auch) in dieser Welt - z.B. in einer kopierten Welt entdeckt. */
+    public void addDecoWorld(UUID decoId, String world) throws SQLException {
         try (Connection connection = pool.getConnection();
-             PreparedStatement statement = connection.prepareStatement("""
-                 SELECT s.player_uuid, COALESCE(p.name, '?') AS name, SUM(s.points) AS score, MAX(s.at) AS last_found
-                 FROM (
-                     SELECT f.player_uuid, COUNT(*) AS points, MAX(f.found_at) AS at
-                     FROM halloween_finds f
-                     JOIN halloween_decos d ON d.deco_id = f.deco_id AND d.event_id = f.event_id
-                     WHERE f.event_id = ?
-                     GROUP BY f.player_uuid
-                     UNION ALL
-                     SELECT a.player_uuid, a.bonus, a.updated_at FROM halloween_adjustments a WHERE a.event_id = ?
-                 ) s
-                 LEFT JOIN halloween_players p ON p.player_uuid = s.player_uuid
-                 GROUP BY s.player_uuid, p.name
-                 """)) {
+             PreparedStatement statement = connection.prepareStatement(
+                 "INSERT IGNORE INTO halloween_deco_worlds (event_id, deco_id, world) VALUES (?, ?, ?)")) {
             statement.setString(1, eventId);
-            statement.setString(2, eventId);
-            try (ResultSet rows = statement.executeQuery()) {
+            statement.setString(2, decoId.toString());
+            statement.setString(3, world.toLowerCase(Locale.ROOT));
+            statement.executeUpdate();
+        }
+    }
+
+    /**
+     * Stand für die Wertung pro Welt: welche Deko in welcher Welt steht (die Welt, in der sie gesetzt wurde, plus
+     * entdeckte Kopien), alle Funde, Korrekturen je Welt und Namen.
+     */
+    public ScoreData loadScoreData(List<Deco> decos) throws SQLException {
+        Map<String, Set<UUID>> decosByWorld = new HashMap<>();
+        Set<UUID> existing = new HashSet<>();
+        for (Deco deco : decos) {
+            existing.add(deco.id());
+            decosByWorld.computeIfAbsent(deco.world().toLowerCase(Locale.ROOT), k -> new HashSet<>()).add(deco.id());
+        }
+        Map<UUID, Map<UUID, Long>> finds = new HashMap<>();
+        Map<String, Map<UUID, ScoreData.Bonus>> bonus = new HashMap<>();
+        Map<UUID, String> names = new HashMap<>();
+        try (Connection connection = pool.getConnection()) {
+            try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT deco_id, world FROM halloween_deco_worlds WHERE event_id = ?")) {
+                statement.setString(1, eventId);
+                try (ResultSet rows = statement.executeQuery()) {
+                    while (rows.next()) {
+                        UUID decoId = UUID.fromString(rows.getString("deco_id"));
+                        if (existing.contains(decoId)) {
+                            decosByWorld.computeIfAbsent(rows.getString("world").toLowerCase(Locale.ROOT), k -> new HashSet<>()).add(decoId);
+                        }
+                    }
+                }
+            }
+            try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT player_uuid, deco_id, found_at FROM halloween_finds WHERE event_id = ?")) {
+                statement.setString(1, eventId);
+                try (ResultSet rows = statement.executeQuery()) {
+                    while (rows.next()) {
+                        UUID decoId = UUID.fromString(rows.getString("deco_id"));
+                        if (existing.contains(decoId)) {
+                            Timestamp at = rows.getTimestamp("found_at");
+                            finds.computeIfAbsent(UUID.fromString(rows.getString("player_uuid")), k -> new HashMap<>())
+                                .put(decoId, at == null ? 0L : at.getTime());
+                        }
+                    }
+                }
+            }
+            try (PreparedStatement statement = connection.prepareStatement(
+                "SELECT world, player_uuid, bonus, updated_at FROM halloween_world_bonus WHERE event_id = ?")) {
+                statement.setString(1, eventId);
+                try (ResultSet rows = statement.executeQuery()) {
+                    while (rows.next()) {
+                        Timestamp at = rows.getTimestamp("updated_at");
+                        bonus.computeIfAbsent(rows.getString("world").toLowerCase(Locale.ROOT), k -> new HashMap<>())
+                            .put(UUID.fromString(rows.getString("player_uuid")),
+                                new ScoreData.Bonus(rows.getInt("bonus"), at == null ? 0L : at.getTime()));
+                    }
+                }
+            }
+            try (PreparedStatement statement = connection.prepareStatement("SELECT player_uuid, name FROM halloween_players");
+                 ResultSet rows = statement.executeQuery()) {
                 while (rows.next()) {
-                    Timestamp last = rows.getTimestamp("last_found");
-                    entries.add(new Leaderboard.Entry(UUID.fromString(rows.getString("player_uuid")), rows.getString("name"),
-                        rows.getInt("score"), last == null ? 0L : last.getTime()));
+                    names.put(UUID.fromString(rows.getString("player_uuid")), rows.getString("name"));
                 }
             }
         }
-        return entries;
+        return new ScoreData(decosByWorld, finds, bonus, names);
     }
 
     // ------------------------------------------------------------------ Punkte von Hand (/halloween set|add|remove)
@@ -322,44 +381,68 @@ public final class HalloweenRepository implements AutoCloseable {
     public enum Adjustment { SET, ADD, REMOVE }
 
     /**
-     * Setzt die Punkte eines Spielers bzw. zählt dazu/ab (nie unter 0). Gespeichert wird nur die Korrektur zu den
-     * gefundenen Deko - weitere Funde zählen danach normal dazu. @return neue Punktzahl
+     * Setzt die Punkte eines Spielers in einer Welt bzw. zählt dazu/ab (nie unter 0). Gespeichert wird nur die Korrektur
+     * zu den in dieser Welt gefundenen Deko - weitere Funde zählen danach normal dazu. Bei 0 werden die Funde der Deko
+     * dieser Welt gelöscht, damit man sie neu suchen kann. @return neue Punktzahl
      */
-    public int adjustScore(UUID playerId, String playerName, Adjustment adjustment, int amount) throws SQLException {
+    public int adjustWorldScore(String world, Set<UUID> decosInWorld, UUID playerId, String playerName,
+                                Adjustment adjustment, int amount) throws SQLException {
+        String worldKey = world.toLowerCase(Locale.ROOT);
         try (Connection connection = pool.getConnection()) {
             connection.setAutoCommit(false);
             try {
-                int found = queryInt(connection, """
-                    SELECT COUNT(*) FROM halloween_finds f
-                    JOIN halloween_decos d ON d.deco_id = f.deco_id AND d.event_id = f.event_id
-                    WHERE f.event_id = ? AND f.player_uuid = ?
-                    """, playerId);
-                int bonus = queryInt(connection,
-                    "SELECT COALESCE(MAX(bonus), 0) FROM halloween_adjustments WHERE event_id = ? AND player_uuid = ? FOR UPDATE", playerId);
-                int current = found + bonus;
-                int target = switch (adjustment) {
+                Set<UUID> found = new HashSet<>();
+                try (PreparedStatement statement = connection.prepareStatement(
+                    "SELECT deco_id FROM halloween_finds WHERE event_id = ? AND player_uuid = ? FOR UPDATE")) {
+                    statement.setString(1, eventId);
+                    statement.setString(2, playerId.toString());
+                    try (ResultSet rows = statement.executeQuery()) {
+                        while (rows.next()) {
+                            UUID decoId = UUID.fromString(rows.getString("deco_id"));
+                            if (decosInWorld.contains(decoId)) {
+                                found.add(decoId);
+                            }
+                        }
+                    }
+                }
+                int bonus = 0;
+                try (PreparedStatement statement = connection.prepareStatement(
+                    "SELECT bonus FROM halloween_world_bonus WHERE event_id = ? AND world = ? AND player_uuid = ? FOR UPDATE")) {
+                    statement.setString(1, eventId);
+                    statement.setString(2, worldKey);
+                    statement.setString(3, playerId.toString());
+                    try (ResultSet rows = statement.executeQuery()) {
+                        bonus = rows.next() ? rows.getInt(1) : 0;
+                    }
+                }
+                int current = found.size() + bonus;
+                int target = Math.max(0, switch (adjustment) {
                     case SET -> amount;
                     case ADD -> current + amount;
                     case REMOVE -> current - amount;
-                };
-                target = Math.max(0, target);
-                if (target == 0) {
-                    // Auf 0 gesetzt = neu anfangen: auch die Funde löschen, sonst wäre jede Deko "schon gefunden".
-                    try (PreparedStatement finds = connection.prepareStatement(
-                        "DELETE FROM halloween_finds WHERE event_id = ? AND player_uuid = ?")) {
-                        finds.setString(1, eventId);
-                        finds.setString(2, playerId.toString());
-                        finds.executeUpdate();
+                });
+                if (target == 0 && !found.isEmpty()) {
+                    // Auf 0 gesetzt = in dieser Welt neu anfangen: Funde ihrer Deko löschen.
+                    try (PreparedStatement delete = connection.prepareStatement(
+                        "DELETE FROM halloween_finds WHERE event_id = ? AND player_uuid = ? AND deco_id = ?")) {
+                        for (UUID decoId : found) {
+                            delete.setString(1, eventId);
+                            delete.setString(2, playerId.toString());
+                            delete.setString(3, decoId.toString());
+                            delete.addBatch();
+                        }
+                        delete.executeBatch();
                     }
-                    found = 0;
+                    found.clear();
                 }
                 try (PreparedStatement upsert = connection.prepareStatement("""
-                    INSERT INTO halloween_adjustments (event_id, player_uuid, bonus) VALUES (?, ?, ?)
+                    INSERT INTO halloween_world_bonus (event_id, world, player_uuid, bonus) VALUES (?, ?, ?, ?)
                     ON DUPLICATE KEY UPDATE bonus = VALUES(bonus)
                     """)) {
                     upsert.setString(1, eventId);
-                    upsert.setString(2, playerId.toString());
-                    upsert.setInt(3, target - found);
+                    upsert.setString(2, worldKey);
+                    upsert.setString(3, playerId.toString());
+                    upsert.setInt(4, target - found.size());
                     upsert.executeUpdate();
                 }
                 try (PreparedStatement name = connection.prepareStatement(
@@ -373,16 +456,6 @@ public final class HalloweenRepository implements AutoCloseable {
             } catch (SQLException ex) {
                 connection.rollback();
                 throw ex;
-            }
-        }
-    }
-
-    private int queryInt(Connection connection, String sql, UUID playerId) throws SQLException {
-        try (PreparedStatement statement = connection.prepareStatement(sql)) {
-            statement.setString(1, eventId);
-            statement.setString(2, playerId.toString());
-            try (ResultSet rows = statement.executeQuery()) {
-                return rows.next() ? rows.getInt(1) : 0;
             }
         }
     }
