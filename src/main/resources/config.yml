@@ -29,17 +29,39 @@ scoreboard:
   subtitle: "&7Such die Helloween Deko."
   # So viele Plätze werden angezeigt; wer darunter liegt, sieht sich zusätzlich darunter.
   top: 5
-  # %rank% Platz, %name% Spieler, %score% gefundene Deko
-  entry: "&7%name% &8(&b%score%&8)"
-  own-entry: "&7%name% &8(&b%score%&8)"
+  # %rank% Platz, %name% Spieler, %score% Punkte, %total% Anzahl Deko
+  entry: "&7%rank%. %name% &8(&b%score%&8)"
+  # Eigene Zeile - in den Top oder (abgesetzt) darunter
+  own-entry: "&7%rank%. %name% &8(&b%score%&8/&b%total%&8)"
+  # Eigene Zeile, solange man noch keinen Punkt hat
+  own-entry-unranked: "&7%name% &8(&b%score%&8/&b%total%&8)"
   # Eigene Zeile auch zeigen, solange man noch nichts gefunden hat
   show-own-without-score: true
   empty: "&8Noch nichts gefunden"
   # Abgleich mit der Datenbank (Funde auf anderen Servern), in Sekunden
   refresh-seconds: 10
 
+# Kleine grüne Pixel an Deko, die man selbst noch nicht gefunden hat (sieht nur der Spieler).
+particles:
+  enabled: true
+  color: "#55FF55"
+  size: 0.6
+  # Partikel je Deko und Durchlauf
+  count: 2
+  # alle so viele Ticks (20 = 1 Sekunde)
+  interval-ticks: 10
+  # nur Deko in diesem Umkreis (Blöcke)
+  range: 24
+
 # Ton beim Finden (Minecraft-Sound-Key), leer = kein Ton
 found-sound: "entity.experience_orb.pickup"
+
+# Bei jedem Join zum Spawn: führt für den Spieler diesen Befehl aus (ohne /), z.B. "spawn" -
+# der Spawn, den man mit /setspawn (HuskHomes) gesetzt hat. Auf dem Bau-Server aus lassen.
+join-spawn:
+  enabled: false
+  command: "spawn"
+  delay-ticks: 5
 
 messages:
   prefix: "&8[&5Halloween&8] "
@@ -57,4 +79,8 @@ messages:
   database-offline: "&cKeine Verbindung zur Datenbank: &7%error% &8- &7config.yml prüfen, dann &b/halloween reload&7."
   connecting: "&7Verbinde mit der Datenbank ..."
   connected: "&7Mit der Datenbank verbunden - Halloween ist aktiv."
-  usage: "&7/halloween setup &8- &7Deko-Items festlegen  &7/halloween inv &8- &7Deko-Items holen"
+  usage: "&7/halloween setup &8- &7Deko-Items festlegen  &7/halloween inv &8- &7Deko-Items holen  &7/halloween set|add|remove &8- &7Punkte ändern"
+  points-usage: "&7/halloween <set|add|remove> <Spieler|*> <Anzahl>"
+  points-set: "&b%player% &7hat jetzt &b%score% &7Punkte."
+  points-all: "&7Punkte von &b%count% &7Spielern geändert."
+  player-unknown: "&7Spieler &b%player% &7ist unbekannt (noch nie online gewesen, seit das Event läuft)."

@@ -11,7 +11,8 @@ public final class SidebarLines {
     private SidebarLines() {
     }
 
-    public static List<String> build(Leaderboard leaderboard, UUID viewerId, String viewerName, ScoreboardSettings settings) {
+    /** @param total Anzahl Deko im Event (für "gefunden/gesamt" in der eigenen Zeile) */
+    public static List<String> build(Leaderboard leaderboard, UUID viewerId, String viewerName, int total, ScoreboardSettings settings) {
         List<String> lines = new ArrayList<>();
         if (settings.subtitle() != null && !settings.subtitle().isBlank()) {
             lines.add(settings.subtitle());
@@ -24,7 +25,8 @@ public final class SidebarLines {
         }
         for (int i = 0; i < top.size(); i++) {
             Leaderboard.Entry entry = top.get(i);
-            lines.add(format(settings.entry(), i + 1, entry.name(), entry.score()));
+            boolean viewer = entry.playerId().equals(viewerId);
+            lines.add(format(viewer ? settings.ownEntry() : settings.entry(), i + 1, entry.name(), entry.score(), total));
         }
 
         Optional<Integer> rank = leaderboard.rank(viewerId);
@@ -32,15 +34,16 @@ public final class SidebarLines {
         if (!inTop && (rank.isPresent() || settings.showOwnWithoutScore())) {
             int score = leaderboard.entry(viewerId).map(Leaderboard.Entry::score).orElse(0);
             lines.add("");
-            lines.add(format(settings.ownEntry(), rank.orElse(0), viewerName, score));
+            lines.add(format(rank.isPresent() ? settings.ownEntry() : settings.ownEntryUnranked(), rank.orElse(0), viewerName, score, total));
         }
         return lines;
     }
 
-    private static String format(String template, int rank, String name, int score) {
+    private static String format(String template, int rank, String name, int score, int total) {
         return template
             .replace("%rank%", rank > 0 ? Integer.toString(rank) : "-")
             .replace("%name%", name)
-            .replace("%score%", Integer.toString(score));
+            .replace("%score%", Integer.toString(score))
+            .replace("%total%", Integer.toString(total));
     }
 }

@@ -2,13 +2,16 @@ package net.clanimg.halloween;
 
 import java.sql.SQLException;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import net.clanimg.halloween.deco.Deco;
+import net.clanimg.halloween.deco.DecoParticles;
 import net.clanimg.halloween.deco.DecoItems;
 import net.clanimg.halloween.deco.DecoListener;
 import net.clanimg.halloween.deco.DecoRegistry;
@@ -16,6 +19,7 @@ import net.clanimg.halloween.menu.MenuListener;
 import net.clanimg.halloween.score.Leaderboard;
 import net.clanimg.halloween.score.ScoreboardService;
 import net.clanimg.halloween.storage.HalloweenRepository;
+import net.clanimg.halloween.storage.HalloweenRepository.Adjustment;
 import net.kyori.adventure.key.InvalidKeyException;
 import net.kyori.adventure.key.Key;
 import net.kyori.adventure.sound.Sound;
@@ -35,6 +39,7 @@ public final class Halloween extends JavaPlugin {
     private ScoreboardService scoreboards;
     private DecoListener decoListener;
     private BukkitTask refreshTask;
+    private DecoParticles particles;
     /** Grund, warum keine Datenbank-Verbindung besteht (null = verbunden). */
     private volatile String databaseError = "noch nicht verbunden";
     private volatile boolean connecting;
@@ -44,7 +49,9 @@ public final class Halloween extends JavaPlugin {
         saveDefaultConfig();
         settings = HalloweenSettings.from(getConfig());
         decoItems = new DecoItems(this);
-        scoreboards = new ScoreboardService(settings.scoreboard());
+        scoreboards = new ScoreboardService(settings.scoreboard(), registry::total);
+        // Unabhängig von der Datenbank.
+        getServer().getPluginManager().registerEvents(new JoinSpawnListener(this), this);
         PluginCommand command = getCommand("halloween");
         if (command != null) {
             HalloweenCommand executor = new HalloweenCommand(this);
@@ -73,6 +80,10 @@ public final class Halloween extends JavaPlugin {
             playerJoined(player); // nach /reload bzw. späterer Verbindung
         }
         scheduleRefresh();
+        if (particles == null) {
+            particles = new DecoParticles(this);
+        }
+        particles.start(settings.particles());
         getLogger().info("Halloween-Event '" + settings.eventId() + "' bereit.");
     }
 
@@ -95,12 +106,19 @@ public final class Halloween extends JavaPlugin {
         if (refreshTask != null) {
             refreshTask.cancel();
         }
+        if (particles != null) {
+            particles.stop();
+        }
         if (scoreboards != null) {
             scoreboards.removeAll();
         }
         if (repository != null) {
             repository.close();
         }
+    }
+
+    public HalloweenSettings settings() {
+        return settings;
     }
 
     public DecoRegistry registry() {
@@ -122,6 +140,7 @@ public final class Halloween extends JavaPlugin {
         scoreboards.applySettings(settings.scoreboard());
         if (isConnected()) {
             scheduleRefresh();
+            particles.start(settings.particles());
             send(sender, "reloaded");
             return;
         }
@@ -233,6 +252,7 @@ public final class Halloween extends JavaPlugin {
 
     public void addDeco(Player player, Deco deco) {
         registry.add(deco); // sofort anklickbar
+        scoreboards.update(scoreboards.leaderboard()); // neue Gesamtzahl
         send(player, "deco-placed", "%total%", Integer.toString(registry.total()));
         UUID placedBy = player.getUniqueId();
         async(() -> repository.addDeco(deco, placedBy), ex -> {
@@ -244,6 +264,7 @@ public final class Halloween extends JavaPlugin {
 
     public void removeDeco(Player player, Deco deco) {
         registry.remove(deco.id());
+        scoreboards.update(scoreboards.leaderboard());
         send(player, "deco-removed", "%total%", Integer.toString(registry.total()));
         async(() -> {
             repository.removeDeco(deco.id());
@@ -251,6 +272,54 @@ public final class Halloween extends JavaPlugin {
         }, ex -> {
             getLogger().warning("Deko nicht aus der Datenbank entfernt: " + ex.getMessage());
             send(player, "database-error");
+        });
+    }
+
+    // ------------------------------------------------------------------ Punkte von Hand (/halloween set|add|remove)
+
+    /** @param target Spielername oder * für alle Spieler, die schon in der Wertung waren, und alle, die online sind */
+    public void adjustPoints(CommandSender sender, Adjustment adjustment, String target, int amount) {
+        Map<String, UUID> online = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            online.put(player.getName(), player.getUniqueId());
+        }
+        async(() -> {
+            Map<String, UUID> known = repository.knownPlayers();
+            Map<String, UUID> targets = new LinkedHashMap<>();
+            if (target.equals("*")) {
+                targets.putAll(known);
+                online.forEach(targets::putIfAbsent);
+            } else {
+                Map<String, UUID> all = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+                all.putAll(known);
+                all.putAll(online); // aktueller Name hat Vorrang
+                for (Map.Entry<String, UUID> player : all.entrySet()) {
+                    if (player.getKey().equalsIgnoreCase(target)) {
+                        targets.put(player.getKey(), player.getValue());
+                    }
+                }
+            }
+            if (targets.isEmpty()) {
+                sync(() -> send(sender, "player-unknown", "%player%", target));
+                return;
+            }
+            Map<String, Integer> scores = new LinkedHashMap<>();
+            for (Map.Entry<String, UUID> player : targets.entrySet()) {
+                scores.put(player.getKey(), repository.adjustScore(player.getValue(), player.getKey(), adjustment, amount));
+            }
+            List<Leaderboard.Entry> leaderboard = repository.loadScores();
+            sync(() -> {
+                scoreboards.update(Leaderboard.of(leaderboard));
+                if (scores.size() == 1) {
+                    Map.Entry<String, Integer> only = scores.entrySet().iterator().next();
+                    send(sender, "points-set", "%player%", only.getKey(), "%score%", Integer.toString(only.getValue()));
+                } else {
+                    send(sender, "points-all", "%count%", Integer.toString(scores.size()));
+                }
+            });
+        }, ex -> {
+            getLogger().warning("Punkte nicht geändert: " + ex.getMessage());
+            send(sender, "database-error");
         });
     }
 

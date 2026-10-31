@@ -17,8 +17,16 @@ public record HalloweenSettings(
     DatabaseSettings database,
     ScoreboardSettings scoreboard,
     String foundSound,
+    JoinSpawnSettings joinSpawn,
+    ParticleSettings particles,
     Map<String, String> messages
 ) {
+    /** Kleine grüne Pixel an Deko, die der Spieler noch nicht gefunden hat (nur er sieht sie). */
+    public record ParticleSettings(boolean enabled, int rgb, float size, int count, int intervalTicks, double range) {}
+
+    /** Beim Join einen Befehl für den Spieler ausführen, z.B. /spawn (HuskHomes nach /setspawn). */
+    public record JoinSpawnSettings(boolean enabled, String command, int delayTicks) {}
+
     public record DatabaseSettings(String host, int port, String name, String user, String password, int poolSize) {
         public String jdbcUrl() {
             return "jdbc:mariadb://" + host + ":" + port + "/" + name;
@@ -32,6 +40,7 @@ public record HalloweenSettings(
         int top,
         String entry,
         String ownEntry,
+        String ownEntryUnranked,
         boolean showOwnWithoutScore,
         String empty,
         int refreshSeconds
@@ -57,8 +66,9 @@ public record HalloweenSettings(
             config.getString("scoreboard.title", "Halloween"),
             config.getString("scoreboard.subtitle", ""),
             Math.max(1, Math.min(10, config.getInt("scoreboard.top", 5))),
-            config.getString("scoreboard.entry", "&7%name% &8(&b%score%&8)"),
-            config.getString("scoreboard.own-entry", "&7%name% &8(&b%score%&8)"),
+            config.getString("scoreboard.entry", "&7%rank%. %name% &8(&b%score%&8)"),
+            config.getString("scoreboard.own-entry", "&7%rank%. %name% &8(&b%score%&8/&b%total%&8)"),
+            config.getString("scoreboard.own-entry-unranked", "&7%name% &8(&b%score%&8/&b%total%&8)"),
             config.getBoolean("scoreboard.show-own-without-score", true),
             config.getString("scoreboard.empty", ""),
             Math.max(2, config.getInt("scoreboard.refresh-seconds", 10)));
@@ -83,6 +93,17 @@ public record HalloweenSettings(
             database,
             scoreboard,
             config.getString("found-sound", ""),
+            new JoinSpawnSettings(
+                config.getBoolean("join-spawn.enabled", false),
+                config.getString("join-spawn.command", "spawn"),
+                Math.max(1, config.getInt("join-spawn.delay-ticks", 5))),
+            new ParticleSettings(
+                config.getBoolean("particles.enabled", true),
+                parseColor(config.getString("particles.color", "#55FF55")),
+                (float) Math.max(0.1, config.getDouble("particles.size", 0.6)),
+                Math.max(1, config.getInt("particles.count", 2)),
+                Math.max(2, config.getInt("particles.interval-ticks", 10)),
+                Math.max(1.0, config.getDouble("particles.range", 24.0))),
             Map.copyOf(messages));
     }
 
@@ -100,6 +121,15 @@ public record HalloweenSettings(
         }
         String value = environment.apply(matcher.group(1));
         return value == null || value.isBlank() ? raw : value;
+    }
+
+    static int parseColor(String raw) {
+        try {
+            String hex = raw == null ? "" : raw.trim().replace("#", "");
+            return Integer.parseInt(hex, 16) & 0xFFFFFF;
+        } catch (NumberFormatException ex) {
+            return 0x55FF55;
+        }
     }
 
     /** Nachricht mit Präfix; {@code replacements} paarweise Platzhalter und Wert. */

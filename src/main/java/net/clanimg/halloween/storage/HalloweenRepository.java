@@ -60,6 +60,15 @@ public final class HalloweenRepository implements AutoCloseable {
         )
         """,
         """
+        CREATE TABLE IF NOT EXISTS halloween_adjustments (
+            event_id VARCHAR(64) NOT NULL,
+            player_uuid CHAR(36) NOT NULL,
+            bonus INT NOT NULL DEFAULT 0,
+            updated_at TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3),
+            PRIMARY KEY (event_id, player_uuid)
+        )
+        """,
+        """
         CREATE TABLE IF NOT EXISTS halloween_players (
             player_uuid CHAR(36) PRIMARY KEY,
             name VARCHAR(16) NOT NULL,
@@ -250,19 +259,26 @@ public final class HalloweenRepository implements AutoCloseable {
         }
     }
 
-    /** Punkte aller Spieler: gefundene Deko, die es im Event noch gibt. */
+    /** Punkte aller Spieler: gefundene Deko (die es im Event noch gibt) plus Korrektur per /halloween set|add|remove. */
     public List<Leaderboard.Entry> loadScores() throws SQLException {
         List<Leaderboard.Entry> entries = new ArrayList<>();
         try (Connection connection = pool.getConnection();
              PreparedStatement statement = connection.prepareStatement("""
-                 SELECT f.player_uuid, COALESCE(p.name, '?') AS name, COUNT(*) AS score, MAX(f.found_at) AS last_found
-                 FROM halloween_finds f
-                 JOIN halloween_decos d ON d.deco_id = f.deco_id AND d.event_id = f.event_id
-                 LEFT JOIN halloween_players p ON p.player_uuid = f.player_uuid
-                 WHERE f.event_id = ?
-                 GROUP BY f.player_uuid, p.name
+                 SELECT s.player_uuid, COALESCE(p.name, '?') AS name, SUM(s.points) AS score, MAX(s.at) AS last_found
+                 FROM (
+                     SELECT f.player_uuid, COUNT(*) AS points, MAX(f.found_at) AS at
+                     FROM halloween_finds f
+                     JOIN halloween_decos d ON d.deco_id = f.deco_id AND d.event_id = f.event_id
+                     WHERE f.event_id = ?
+                     GROUP BY f.player_uuid
+                     UNION ALL
+                     SELECT a.player_uuid, a.bonus, a.updated_at FROM halloween_adjustments a WHERE a.event_id = ?
+                 ) s
+                 LEFT JOIN halloween_players p ON p.player_uuid = s.player_uuid
+                 GROUP BY s.player_uuid, p.name
                  """)) {
             statement.setString(1, eventId);
+            statement.setString(2, eventId);
             try (ResultSet rows = statement.executeQuery()) {
                 while (rows.next()) {
                     Timestamp last = rows.getTimestamp("last_found");
@@ -272,6 +288,80 @@ public final class HalloweenRepository implements AutoCloseable {
             }
         }
         return entries;
+    }
+
+    // ------------------------------------------------------------------ Punkte von Hand (/halloween set|add|remove)
+
+    public enum Adjustment { SET, ADD, REMOVE }
+
+    /**
+     * Setzt die Punkte eines Spielers bzw. zählt dazu/ab (nie unter 0). Gespeichert wird nur die Korrektur zu den
+     * gefundenen Deko - weitere Funde zählen danach normal dazu. @return neue Punktzahl
+     */
+    public int adjustScore(UUID playerId, String playerName, Adjustment adjustment, int amount) throws SQLException {
+        try (Connection connection = pool.getConnection()) {
+            connection.setAutoCommit(false);
+            try {
+                int found = queryInt(connection, """
+                    SELECT COUNT(*) FROM halloween_finds f
+                    JOIN halloween_decos d ON d.deco_id = f.deco_id AND d.event_id = f.event_id
+                    WHERE f.event_id = ? AND f.player_uuid = ?
+                    """, playerId);
+                int bonus = queryInt(connection,
+                    "SELECT COALESCE(MAX(bonus), 0) FROM halloween_adjustments WHERE event_id = ? AND player_uuid = ? FOR UPDATE", playerId);
+                int current = found + bonus;
+                int target = switch (adjustment) {
+                    case SET -> amount;
+                    case ADD -> current + amount;
+                    case REMOVE -> current - amount;
+                };
+                target = Math.max(0, target);
+                try (PreparedStatement upsert = connection.prepareStatement("""
+                    INSERT INTO halloween_adjustments (event_id, player_uuid, bonus) VALUES (?, ?, ?)
+                    ON DUPLICATE KEY UPDATE bonus = VALUES(bonus)
+                    """)) {
+                    upsert.setString(1, eventId);
+                    upsert.setString(2, playerId.toString());
+                    upsert.setInt(3, target - found);
+                    upsert.executeUpdate();
+                }
+                try (PreparedStatement name = connection.prepareStatement(
+                    "INSERT INTO halloween_players (player_uuid, name) VALUES (?, ?) ON DUPLICATE KEY UPDATE name = VALUES(name)")) {
+                    name.setString(1, playerId.toString());
+                    name.setString(2, playerName);
+                    name.executeUpdate();
+                }
+                connection.commit();
+                return target;
+            } catch (SQLException ex) {
+                connection.rollback();
+                throw ex;
+            }
+        }
+    }
+
+    private int queryInt(Connection connection, String sql, UUID playerId) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, eventId);
+            statement.setString(2, playerId.toString());
+            try (ResultSet rows = statement.executeQuery()) {
+                return rows.next() ? rows.getInt(1) : 0;
+            }
+        }
+    }
+
+    /** Alle Spieler, die schon in der Wertung waren (Name -> UUID). */
+    public Map<String, UUID> knownPlayers() throws SQLException {
+        Map<String, UUID> players = new TreeMap<>(String.CASE_INSENSITIVE_ORDER);
+        try (Connection connection = pool.getConnection();
+             PreparedStatement statement = connection.prepareStatement("SELECT player_uuid, name FROM halloween_players")) {
+            try (ResultSet rows = statement.executeQuery()) {
+                while (rows.next()) {
+                    players.put(rows.getString("name"), UUID.fromString(rows.getString("player_uuid")));
+                }
+            }
+        }
+        return players;
     }
 
     @Override

@@ -9,64 +9,62 @@ import net.clanimg.halloween.HalloweenSettings.ScoreboardSettings;
 import org.junit.jupiter.api.Test;
 
 class SidebarLinesTest {
-    private static final ScoreboardSettings SETTINGS = new ScoreboardSettings(true, "Titel", "&7Such die Helloween Deko.", 5,
-        "&7%name% &8(&b%score%&8)", "&7%name% &8(&b%score%&8)", true, "&8Noch nichts gefunden", 10);
+    private static final ScoreboardSettings SETTINGS = new ScoreboardSettings(true, "Titel", "Such die Helloween Deko.", 5,
+        "%rank%. %name% (%score%)", "%rank%. %name% (%score%/%total%)", "%name% (%score%/%total%)", true, "Noch nichts", 10);
+
+    private static List<Leaderboard.Entry> players(int count) {
+        List<Leaderboard.Entry> entries = new ArrayList<>();
+        for (int i = 1; i <= count; i++) {
+            entries.add(new Leaderboard.Entry(UUID.randomUUID(), "Spieler" + i, 30 - i, i));
+        }
+        return entries;
+    }
 
     @Test
-    void mostFindsFirstAndOnTieWhoGotThereEarlier() {
+    void mostPointsFirstAndOnTieWhoGotThereEarlier() {
         UUID a = UUID.randomUUID();
-        UUID b = UUID.randomUUID();
-        UUID c = UUID.randomUUID();
         Leaderboard board = Leaderboard.of(List.of(
             new Leaderboard.Entry(a, "Anna", 2, 2_000),
-            new Leaderboard.Entry(b, "Ben", 3, 5_000),
-            new Leaderboard.Entry(c, "Cem", 2, 1_000)));
+            new Leaderboard.Entry(UUID.randomUUID(), "Ben", 3, 5_000),
+            new Leaderboard.Entry(UUID.randomUUID(), "Cem", 2, 1_000)));
 
         assertEquals(List.of("Ben", "Cem", "Anna"), board.top(5).stream().map(Leaderboard.Entry::name).toList());
         assertEquals(3, board.rank(a).orElseThrow());
     }
 
     @Test
-    void showsTopFiveAndTheViewerSeparatelyWhenBelow() {
-        List<Leaderboard.Entry> entries = new ArrayList<>();
-        for (int i = 1; i <= 7; i++) {
-            entries.add(new Leaderboard.Entry(UUID.randomUUID(), "Spieler" + i, 10 - i, i));
-        }
-        UUID me = entries.get(6).playerId();
+    void numberedTopFiveAndOwnLineWithTotalBelow() {
+        List<Leaderboard.Entry> entries = players(11);
+        UUID me = entries.get(10).playerId();
 
-        List<String> lines = SidebarLines.build(Leaderboard.of(entries), me, "Spieler7", SETTINGS);
-
-        assertEquals(List.of(
-            "&7Such die Helloween Deko.", "",
-            "&7Spieler1 &8(&b9&8)", "&7Spieler2 &8(&b8&8)", "&7Spieler3 &8(&b7&8)", "&7Spieler4 &8(&b6&8)", "&7Spieler5 &8(&b5&8)",
-            "", "&7Spieler7 &8(&b3&8)"), lines);
+        assertEquals(List.of("Such die Helloween Deko.", "",
+                "1. Spieler1 (29)", "2. Spieler2 (28)", "3. Spieler3 (27)", "4. Spieler4 (26)", "5. Spieler5 (25)",
+                "", "11. Spieler11 (19/20)"),
+            SidebarLines.build(Leaderboard.of(entries), me, "Spieler11", 20, SETTINGS));
     }
 
     @Test
-    void viewerInTopFiveIsNotRepeated() {
-        UUID me = UUID.randomUUID();
-        Leaderboard board = Leaderboard.of(List.of(new Leaderboard.Entry(me, "WrobelXXL", 1, 1)));
+    void ownLineInsideTopFiveShowsTotalThere() {
+        List<Leaderboard.Entry> entries = players(5);
+        UUID me = entries.get(3).playerId();
 
-        assertEquals(List.of("&7Such die Helloween Deko.", "", "&7WrobelXXL &8(&b1&8)"),
-            SidebarLines.build(board, me, "WrobelXXL", SETTINGS));
+        assertEquals(List.of("Such die Helloween Deko.", "",
+                "1. Spieler1 (29)", "2. Spieler2 (28)", "3. Spieler3 (27)", "4. Spieler4 (26/40)", "5. Spieler5 (25)"),
+            SidebarLines.build(Leaderboard.of(entries), me, "Spieler4", 40, SETTINGS));
+    }
+
+    @Test
+    void withoutPointsTheOwnLineHasNoRank() {
+        assertEquals(List.of("Such die Helloween Deko.", "", "Noch nichts", "", "Neu (0/20)"),
+            SidebarLines.build(Leaderboard.EMPTY, UUID.randomUUID(), "Neu", 20, SETTINGS));
     }
 
     @Test
     void aNewFindMovesThePlayerUpImmediately() {
         UUID me = UUID.randomUUID();
-        UUID other = UUID.randomUUID();
-        Leaderboard board = Leaderboard.of(List.of(new Leaderboard.Entry(other, "Ben", 1, 1)));
+        Leaderboard board = Leaderboard.of(List.of(new Leaderboard.Entry(UUID.randomUUID(), "Ben", 1, 1)))
+            .withFind(me, "WrobelXXL", 2).withFind(me, "WrobelXXL", 3);
 
-        List<String> before = SidebarLines.build(board, me, "WrobelXXL", SETTINGS);
-        Leaderboard after = board.withFind(me, "WrobelXXL", 2).withFind(me, "WrobelXXL", 3);
-
-        assertEquals(List.of("&7Such die Helloween Deko.", "", "&7Ben &8(&b1&8)", "", "&7WrobelXXL &8(&b0&8)"), before);
-        assertEquals(List.of("WrobelXXL", "Ben"), after.top(5).stream().map(Leaderboard.Entry::name).toList());
-    }
-
-    @Test
-    void emptyBoardShowsHint() {
-        assertEquals(List.of("&7Such die Helloween Deko.", "", "&8Noch nichts gefunden", "", "&7Neu &8(&b0&8)"),
-            SidebarLines.build(Leaderboard.EMPTY, UUID.randomUUID(), "Neu", SETTINGS));
+        assertEquals(List.of("WrobelXXL", "Ben"), board.top(5).stream().map(Leaderboard.Entry::name).toList());
     }
 }

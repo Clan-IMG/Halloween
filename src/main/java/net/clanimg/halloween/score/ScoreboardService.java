@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.IntSupplier;
 import net.clanimg.halloween.HalloweenSettings.ScoreboardSettings;
 import net.clanimg.halloween.Text;
 import org.bukkit.Bukkit;
@@ -22,9 +23,11 @@ public final class ScoreboardService {
     private final Map<UUID, Scoreboard> boards = new ConcurrentHashMap<>();
     private ScoreboardSettings settings;
     private Leaderboard leaderboard = Leaderboard.EMPTY;
+    private final IntSupplier totalDecos;
 
-    public ScoreboardService(ScoreboardSettings settings) {
+    public ScoreboardService(ScoreboardSettings settings, IntSupplier totalDecos) {
         this.settings = settings;
+        this.totalDecos = totalDecos;
     }
 
     public Leaderboard leaderboard() {
@@ -87,7 +90,7 @@ public final class ScoreboardService {
         if (objective == null) {
             return;
         }
-        List<String> lines = SidebarLines.build(leaderboard, player.getUniqueId(), player.getName(), settings);
+        List<String> lines = SidebarLines.build(leaderboard, player.getUniqueId(), player.getName(), totalDecos.getAsInt(), settings);
         int count = Math.min(lines.size(), MAX_LINES);
         for (int i = 0; i < count; i++) {
             // Feste, unsichtbare Einträge; angezeigt wird der eigene Text. Höherer Wert = weiter oben.

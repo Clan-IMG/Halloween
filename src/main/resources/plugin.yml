@@ -16,7 +16,8 @@ libraries:
 commands:
   halloween:
     description: Halloween-Deko einrichten und verteilen
-    usage: /halloween <setup|inv|reload>
+    aliases: [ helloween ]
+    usage: /halloween <setup|inv|reload|set|add|remove>
 
 permissions:
   halloween.setup:
@@ -28,6 +29,9 @@ permissions:
   halloween.reload:
     description: /halloween reload - config.yml neu laden
     default: op
+  halloween.points:
+    description: /halloween set|add|remove <Spieler|*> <Anzahl> - Punkte von Hand ändern
+    default: op
   halloween.admin:
     description: Alle Halloween-Rechte
     default: op
@@ -35,3 +39,4 @@ permissions:
       halloween.setup: true
       halloween.inv: true
       halloween.reload: true
+      halloween.points: true

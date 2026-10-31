@@ -8,6 +8,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 
 /**
  * Alle Deko des Events und wer was schon gefunden hat (Stand aus der Datenbank, hier zwischengespeichert).
@@ -17,6 +18,7 @@ public final class DecoRegistry {
     private volatile Map<UUID, Deco> decos = Map.of();
     private volatile Map<Long, List<Deco>> blockDecosByPosition = Map.of();
     private final Map<UUID, Set<UUID>> foundByPlayer = new ConcurrentHashMap<>();
+    private final AtomicLong version = new AtomicLong();
 
     public void replaceAll(Collection<Deco> all) {
         Map<UUID, Deco> byId = new ConcurrentHashMap<>();
@@ -29,6 +31,16 @@ public final class DecoRegistry {
         }
         decos = byId;
         blockDecosByPosition = byPosition;
+        version.incrementAndGet();
+    }
+
+    /** Zählt bei jeder Änderung der Deko-Liste hoch (für Zwischenspeicher). */
+    public long version() {
+        return version.get();
+    }
+
+    public Collection<Deco> all() {
+        return decos.values();
     }
 
     public void add(Deco deco) {
