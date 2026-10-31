@@ -67,6 +67,11 @@ public final class ScoreData {
         return (int) findsByPlayer.getOrDefault(playerId, Map.of()).keySet().stream().filter(decos::contains).count();
     }
 
+    /** Punkte des Spielers in dieser Welt (Funde + Korrektur, höchstens die Zahl der Deko). */
+    public int score(UUID playerId, String world) {
+        return leaderboard(world).entry(playerId).map(Leaderboard.Entry::score).orElse(0);
+    }
+
     public Leaderboard leaderboard(String world) {
         return leaderboards.computeIfAbsent(key(world), this::computeLeaderboard);
     }
@@ -90,6 +95,10 @@ public final class ScoreData {
             if (extra != null) {
                 score += extra.points();
                 last = Math.max(last, extra.atMillis());
+            }
+            // Nie mehr Punkte als Deko in der Welt (z.B. per set auf "alle gefunden" gesetzt, dann noch geklickt).
+            if (!decos.isEmpty()) {
+                score = Math.min(score, decos.size());
             }
             entries.add(new Leaderboard.Entry(player, names.getOrDefault(player, "?"), score, last));
         }

@@ -244,6 +244,13 @@ public final class Halloween extends JavaPlugin {
         String name = player.getName();
         String world = player.getWorld().getName();
         long foundAt = System.currentTimeMillis();
+        int total = scoreboards.data().total(world);
+        if (total > 0 && scoreboards.data().score(playerId, world) >= total) {
+            // Schon alle (z.B. per /halloween set) - weitere Klicks zählen nicht.
+            registry.unmarkFound(playerId, deco.id());
+            send(player, "all-found", "%total%", Integer.toString(total));
+            return;
+        }
         async(() -> {
             boolean isNew = repository.recordFind(playerId, name, deco.id());
             sync(() -> {
@@ -253,7 +260,7 @@ public final class Halloween extends JavaPlugin {
                 }
                 ScoreData data = scoreboards.data().withDecoIn(deco.id(), world).withFind(playerId, name, deco.id(), foundAt);
                 scoreboards.update(data);
-                send(player, "found", "%found%", Integer.toString(data.found(playerId, world)),
+                send(player, "found", "%found%", Integer.toString(data.score(playerId, world)),
                     "%total%", Integer.toString(data.total(world)));
                 playFoundSound(player);
             });

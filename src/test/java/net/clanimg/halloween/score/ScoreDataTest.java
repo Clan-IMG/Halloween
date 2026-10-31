@@ -28,7 +28,7 @@ class ScoreDataTest {
 
         assertEquals(2, data.total("halloween-map"));
         assertEquals(1, data.found(me, "Halloween-Map"), "Deko aus der gelöschten Welt zählt hier nicht");
-        assertEquals(6, data.leaderboard("Halloween-Map").entry(me).orElseThrow().score(), "1 Fund + 5 Korrektur");
+        assertEquals(2, data.leaderboard("Halloween-Map").entry(me).orElseThrow().score(), "1 Fund + 5 Korrektur, gedeckelt auf 2 Deko");
         assertEquals(2, data.leaderboard("Halloween-Map").entry(other).orElseThrow().score());
         assertEquals(0, data.total("lobby"));
     }
@@ -40,6 +40,16 @@ class ScoreDataTest {
         assertEquals(1, data.total("Kopie"));
         assertEquals(1, data.found(other, "Kopie"));
         assertEquals(1, data.leaderboard("Kopie").entry(me).orElseThrow().score(), "head1 hatte ich schon im Original gefunden");
+    }
+
+    @Test
+    void scoreNeverExceedsTheDecoOfTheWorld() {
+        // set 2 = alle gefunden; ein weiterer echter Fund darf nicht 3/2 ergeben
+        ScoreData data = new ScoreData(Map.of("map", Set.of(head1, head2)), Map.of(me, Map.of(head1, 1L)),
+            Map.of("map", Map.of(me, new ScoreData.Bonus(2, 2L))), Map.of(me, "WrobelXXL"));
+
+        assertEquals(2, data.score(me, "map"));
+        assertEquals(2, data.withFind(me, "WrobelXXL", head2, 3L).score(me, "map"));
     }
 
     @Test

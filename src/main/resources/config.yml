@@ -67,6 +67,7 @@ messages:
   prefix: "&8[&5Halloween&8] "
   found: "&7Du hast eine Deko gefunden! &8(&b%found%&8/&b%total%&8)"
   already-found: "&7Diese Deko hast du schon gefunden."
+  all-found: "&7Du hast hier schon alle &b%total% &7Deko gefunden."
   deco-placed: "&7Deko gesetzt. &8(&b%total%&8 insgesamt)"
   deco-removed: "&7Deko entfernt. &8(&b%total%&8 insgesamt)"
   deco-protected: "&7Das ist Halloween-Deko. Zum Entfernen schleichen und abbauen."
