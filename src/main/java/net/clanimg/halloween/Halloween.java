@@ -12,6 +12,7 @@ import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import net.clanimg.halloween.deco.Deco;
+import net.clanimg.halloween.deco.DecoDiscovery;
 import net.clanimg.halloween.deco.DecoParticles;
 import net.clanimg.halloween.deco.DecoItems;
 import net.clanimg.halloween.deco.DecoListener;
@@ -41,6 +42,7 @@ public final class Halloween extends JavaPlugin {
     private DecoListener decoListener;
     private BukkitTask refreshTask;
     private DecoParticles particles;
+    private DecoDiscovery discovery;
     /** Grund, warum keine Datenbank-Verbindung besteht (null = verbunden). */
     private volatile String databaseError = "noch nicht verbunden";
     private volatile boolean connecting;
@@ -85,6 +87,10 @@ public final class Halloween extends JavaPlugin {
             particles = new DecoParticles(this);
         }
         particles.start(settings.particles());
+        if (discovery == null) {
+            discovery = new DecoDiscovery(this);
+        }
+        discovery.start();
         getLogger().info("Halloween-Event '" + settings.eventId() + "' bereit.");
     }
 
@@ -110,6 +116,9 @@ public final class Halloween extends JavaPlugin {
         if (particles != null) {
             particles.stop();
         }
+        if (discovery != null) {
+            discovery.stop();
+        }
         if (scoreboards != null) {
             scoreboards.removeAll();
         }
@@ -120,6 +129,10 @@ public final class Halloween extends JavaPlugin {
 
     public HalloweenSettings settings() {
         return settings;
+    }
+
+    public ScoreData scoreData() {
+        return scoreboards.data();
     }
 
     public DecoRegistry registry() {
