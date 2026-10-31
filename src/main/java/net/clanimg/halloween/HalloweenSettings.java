@@ -100,10 +100,10 @@ public record HalloweenSettings(
             new ParticleSettings(
                 config.getBoolean("particles.enabled", true),
                 parseColor(config.getString("particles.color", "#55FF55")),
-                (float) Math.max(0.1, config.getDouble("particles.size", 0.6)),
-                Math.max(1, config.getInt("particles.count", 2)),
-                Math.max(2, config.getInt("particles.interval-ticks", 10)),
-                Math.max(1.0, config.getDouble("particles.range", 24.0))),
+                (float) Math.max(0.1, config.getDouble("particles.size", 1.4)),
+                Math.max(1, config.getInt("particles.count", 10)),
+                Math.max(2, config.getInt("particles.interval-ticks", 5)),
+                Math.max(1.0, config.getDouble("particles.range", 32.0))),
             Map.copyOf(messages));
     }
 

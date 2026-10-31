@@ -115,6 +115,11 @@ public final class DecoRegistry {
         return (int) found.stream().filter(current::containsKey).count();
     }
 
+    /** Spieler, deren Funde hier gerade geladen sind (die Online-Spieler). */
+    public Set<UUID> trackedPlayers() {
+        return Set.copyOf(foundByPlayer.keySet());
+    }
+
     public void forget(UUID playerId) {
         foundByPlayer.remove(playerId);
     }

@@ -184,8 +184,15 @@ public final class Halloween extends JavaPlugin {
         try {
             List<Deco> decos = repository.loadDecos();
             List<Leaderboard.Entry> scores = repository.loadScores();
+            // Funde der Online-Spieler auch neu laden (z.B. per /halloween set auf einem anderen Server zurückgesetzt).
+            Map<UUID, Set<UUID>> found = repository.loadFound(registry.trackedPlayers());
             sync(() -> {
                 registry.replaceAll(decos);
+                found.forEach((playerId, decoIds) -> {
+                    if (registry.trackedPlayers().contains(playerId)) {
+                        registry.setFound(playerId, decoIds);
+                    }
+                });
                 scoreboards.update(Leaderboard.of(scores));
             });
         } catch (SQLException ex) {
@@ -308,7 +315,9 @@ public final class Halloween extends JavaPlugin {
                 scores.put(player.getKey(), repository.adjustScore(player.getValue(), player.getKey(), adjustment, amount));
             }
             List<Leaderboard.Entry> leaderboard = repository.loadScores();
+            Map<UUID, Set<UUID>> found = repository.loadFound(registry.trackedPlayers());
             sync(() -> {
+                found.forEach(registry::setFound);
                 scoreboards.update(Leaderboard.of(leaderboard));
                 if (scores.size() == 1) {
                     Map.Entry<String, Integer> only = scores.entrySet().iterator().next();

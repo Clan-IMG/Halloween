@@ -45,13 +45,13 @@ scoreboard:
 particles:
   enabled: true
   color: "#55FF55"
-  size: 0.6
+  size: 1.4
   # Partikel je Deko und Durchlauf
-  count: 2
+  count: 10
   # alle so viele Ticks (20 = 1 Sekunde)
-  interval-ticks: 10
+  interval-ticks: 5
   # nur Deko in diesem Umkreis (Blöcke)
-  range: 24
+  range: 32
 
 # Ton beim Finden (Minecraft-Sound-Key), leer = kein Ton
 found-sound: "entity.experience_orb.pickup"
@@ -81,6 +81,6 @@ messages:
   connected: "&7Mit der Datenbank verbunden - Halloween ist aktiv."
   usage: "&7/halloween setup &8- &7Deko-Items festlegen  &7/halloween inv &8- &7Deko-Items holen  &7/halloween set|add|remove &8- &7Punkte ändern"
   points-usage: "&7/halloween <set|add|remove> <Spieler|*> <Anzahl>"
-  points-set: "&b%player% &7hat jetzt &b%score% &7Punkte."
+  points-set: "&b%player% &7hat jetzt &b%score% &7Punkte. &8(bei 0 kann alle Deko neu gesucht werden)"
   points-all: "&7Punkte von &b%count% &7Spielern geändert."
   player-unknown: "&7Spieler &b%player% &7ist unbekannt (noch nie online gewesen, seit das Event läuft)."

@@ -79,7 +79,7 @@ public final class DecoParticles {
                 if (spot.center().distanceSquared(position) > rangeSquared || registry.hasFound(playerId, spot.decoId())) {
                     continue;
                 }
-                player.spawnParticle(Particle.DUST, spot.center(), settings.count(), 0.25, 0.25, 0.25, 0.0, dust);
+                player.spawnParticle(Particle.DUST, spot.center(), settings.count(), 0.4, 0.4, 0.4, 0.0, dust);
             }
         }
     }

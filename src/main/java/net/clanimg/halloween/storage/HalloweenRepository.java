@@ -9,6 +9,8 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.sql.Timestamp;
 import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -230,6 +232,31 @@ public final class HalloweenRepository implements AutoCloseable {
         return found;
     }
 
+    /** Funde mehrerer Spieler auf einmal (für den regelmäßigen Abgleich der Online-Spieler). */
+    public Map<UUID, Set<UUID>> loadFound(Collection<UUID> playerIds) throws SQLException {
+        Map<UUID, Set<UUID>> found = new HashMap<>();
+        if (playerIds.isEmpty()) {
+            return found;
+        }
+        playerIds.forEach(id -> found.put(id, new HashSet<>()));
+        String placeholders = String.join(",", java.util.Collections.nCopies(playerIds.size(), "?"));
+        try (Connection connection = pool.getConnection();
+             PreparedStatement statement = connection.prepareStatement(
+                 "SELECT player_uuid, deco_id FROM halloween_finds WHERE event_id = ? AND player_uuid IN (" + placeholders + ")")) {
+            statement.setString(1, eventId);
+            int index = 2;
+            for (UUID id : playerIds) {
+                statement.setString(index++, id.toString());
+            }
+            try (ResultSet rows = statement.executeQuery()) {
+                while (rows.next()) {
+                    found.get(UUID.fromString(rows.getString("player_uuid"))).add(UUID.fromString(rows.getString("deco_id")));
+                }
+            }
+        }
+        return found;
+    }
+
     /** @return false, wenn der Spieler die Deko schon hatte (z.B. auf einem anderen Server gefunden) */
     public boolean recordFind(UUID playerId, String playerName, UUID decoId) throws SQLException {
         try (Connection connection = pool.getConnection()) {
@@ -316,6 +343,16 @@ public final class HalloweenRepository implements AutoCloseable {
                     case REMOVE -> current - amount;
                 };
                 target = Math.max(0, target);
+                if (target == 0) {
+                    // Auf 0 gesetzt = neu anfangen: auch die Funde löschen, sonst wäre jede Deko "schon gefunden".
+                    try (PreparedStatement finds = connection.prepareStatement(
+                        "DELETE FROM halloween_finds WHERE event_id = ? AND player_uuid = ?")) {
+                        finds.setString(1, eventId);
+                        finds.setString(2, playerId.toString());
+                        finds.executeUpdate();
+                    }
+                    found = 0;
+                }
                 try (PreparedStatement upsert = connection.prepareStatement("""
                     INSERT INTO halloween_adjustments (event_id, player_uuid, bonus) VALUES (?, ?, ?)
                     ON DUPLICATE KEY UPDATE bonus = VALUES(bonus)
