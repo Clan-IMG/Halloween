@@ -1,0 +1,60 @@
+# Halloween - Deko suchen und finden
+#
+# /halloween setup  Inventar öffnen und die Deko-Items hineinlegen (meist Köpfe)
+# /halloween inv    Deko-Items holen (Klick = Item ins Inventar), dann platzieren
+# Spieler klicken eine platzierte Deko (Links- oder Rechtsklick) an und bekommen einen Punkt -
+# jede Deko zählt pro Spieler nur einmal. Deko entfernen: mit halloween.inv schleichen und abbauen.
+#
+# Tipp Lobby: Deko auf dem Bau-Server in die Welt setzen und die Welt dann in die Lobby
+# duplizieren - Köpfe behalten ihre Deko-ID auch in der Kopie.
+
+# Alle Daten (Deko, Funde, Items) hängen an dieser ID. Neue ID = neues Event, alte Daten bleiben erhalten.
+event-id: "halloween-2026"
+
+# MariaDB - Tabellen legt das Plugin selbst an.
+# Liegt diese Datei im SimpleCloud-Template, setzt SimpleCloud die secrets-Platzhalter beim Kopieren ein
+# (in dieser Datei nur dort, wo ein echtes Secret gemeint ist - SimpleCloud wertet auch Kommentare aus).
+database:
+  host: "10.8.0.1"
+  port: 3333
+  name: "halloween"
+  user: "halloween"
+  password: "{{ secrets.HALLOWEEN_DB_PASSWORD }}"
+  pool-size: 4
+
+scoreboard:
+  enabled: true
+  # MiniMessage oder &-Farbcodes
+  title: "<b><gradient:#8000FF:#FF00AA>Helloween</gradient></b>"
+  subtitle: "&7Such die Helloween Deko."
+  # So viele Plätze werden angezeigt; wer darunter liegt, sieht sich zusätzlich darunter.
+  top: 5
+  # %rank% Platz, %name% Spieler, %score% gefundene Deko
+  entry: "&7%name% &8(&b%score%&8)"
+  own-entry: "&7%name% &8(&b%score%&8)"
+  # Eigene Zeile auch zeigen, solange man noch nichts gefunden hat
+  show-own-without-score: true
+  empty: "&8Noch nichts gefunden"
+  # Abgleich mit der Datenbank (Funde auf anderen Servern), in Sekunden
+  refresh-seconds: 10
+
+# Ton beim Finden (Minecraft-Sound-Key), leer = kein Ton
+found-sound: "entity.experience_orb.pickup"
+
+messages:
+  prefix: "&8[&5Halloween&8] "
+  found: "&7Du hast eine Deko gefunden! &8(&b%found%&8/&b%total%&8)"
+  already-found: "&7Diese Deko hast du schon gefunden."
+  deco-placed: "&7Deko gesetzt. &8(&b%total%&8 insgesamt)"
+  deco-removed: "&7Deko entfernt. &8(&b%total%&8 insgesamt)"
+  deco-protected: "&7Das ist Halloween-Deko. Zum Entfernen schleichen und abbauen."
+  setup-saved: "&7%count% Deko-Items gespeichert."
+  inv-empty: "&7Noch keine Deko-Items - lege sie mit &b/halloween setup &7an."
+  inv-full: "&7Dein Inventar ist voll."
+  no-permission: "&cDazu fehlt dir die Berechtigung."
+  reloaded: "&7Konfiguration neu geladen. &8(Datenbank-Einstellungen erst nach Neustart)"
+  database-error: "&cDas hat gerade nicht geklappt. Bitte versuch es gleich nochmal."
+  database-offline: "&cKeine Verbindung zur Datenbank: &7%error% &8- &7config.yml prüfen, dann &b/halloween reload&7."
+  connecting: "&7Verbinde mit der Datenbank ..."
+  connected: "&7Mit der Datenbank verbunden - Halloween ist aktiv."
+  usage: "&7/halloween setup &8- &7Deko-Items festlegen  &7/halloween inv &8- &7Deko-Items holen"

@@ -8,3 +8,30 @@ load: POSTWORLD
 
 authors: [ WrobelXXL ]
 website: https://clan-img.net
+
+libraries:
+  - com.zaxxer:HikariCP:${hikari}
+  - org.mariadb.jdbc:mariadb-java-client:${mariadb}
+
+commands:
+  halloween:
+    description: Halloween-Deko einrichten und verteilen
+    usage: /halloween <setup|inv|reload>
+
+permissions:
+  halloween.setup:
+    description: /halloween setup - Deko-Items festlegen
+    default: op
+  halloween.inv:
+    description: /halloween inv - Deko-Items holen, Deko platzieren und (schleichend) abbauen
+    default: op
+  halloween.reload:
+    description: /halloween reload - config.yml neu laden
+    default: op
+  halloween.admin:
+    description: Alle Halloween-Rechte
+    default: op
+    children:
+      halloween.setup: true
+      halloween.inv: true
+      halloween.reload: true
